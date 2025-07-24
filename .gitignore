@@ -1,0 +1,78 @@
+# Compiled class files
+*.class
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Mac OS X
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Application specific
+application.properties
+application-*.properties
+*.db
+*.sql
+*.sqlite
+*.h2.db
+
+# PDF storage (if you store PDFs locally)
+pdf-storage/
+
+# Environment variables
+.env
+*.env
+
+# Build directories
+build/
+dist/
+
+# Dependency directories
+node_modules/
+
+# Testing
+coverage/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Local configuration files (sensible to keep local)
+!src/main/resources/application.properties
+!src/main/resources/application-*.properties
+
+# Keep the Maven wrapper
+!.mvn/
+!.mvn/wrapper/
+
+# Keep the README and LICENSE files
+!README.md
+!LICENSE

@@ -19,15 +19,22 @@ import javafx.scene.layout.VBox;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * Modular PDF viewer component that handles PDF rendering, navigation, and progress tracking.
+ * Supports both single page and infinite scrolling view modes.
  * Uses Observer pattern for page change notifications and Command pattern for navigation actions.
  */
 public class PdfViewerComponent extends BorderPane {
+    
+    public enum ViewMode {
+        SINGLE_PAGE, INFINITE_SCROLL
+    }
     
     private final PdfPageRenderer pageRenderer;
     private final ReadingProgressService progressService;
@@ -36,6 +43,7 @@ public class PdfViewerComponent extends BorderPane {
     // UI Components
     private ImageView pageImageView;
     private ScrollPane scrollPane;
+    private VBox infiniteScrollContainer;
     private Label pageLabel;
     private Label progressLabel;
     private Button prevButton;
@@ -43,6 +51,7 @@ public class PdfViewerComponent extends BorderPane {
     private TextField pageField;
     private ProgressBar progressBar;
     private Slider zoomSlider;
+    private ToggleButton viewModeToggle;
     
     // State
     private PdfDocument currentDocument;
@@ -50,6 +59,11 @@ public class PdfViewerComponent extends BorderPane {
     private int totalPages = 0;
     private double currentZoom = 1.0;
     private ReadingProgress readingProgress;
+    private ViewMode currentViewMode = ViewMode.SINGLE_PAGE;
+    
+    // Infinite scroll state
+    private Map<Integer, ImageView> renderedPages = new HashMap<>();
+    private boolean isLoadingPages = false;
     
     // Observers for page changes
     private final List<PageChangeListener> pageChangeListeners = new ArrayList<>();
@@ -73,24 +87,26 @@ public class PdfViewerComponent extends BorderPane {
     }
     
     private void initializeComponents() {
-        // Main image view for PDF pages
+        // Main image view for PDF pages (single page mode)
         pageImageView = new ImageView();
         pageImageView.setPreserveRatio(true);
         pageImageView.setSmooth(true);
         
+        // Container for infinite scroll mode
+        infiniteScrollContainer = new VBox(10);
+        infiniteScrollContainer.setAlignment(Pos.CENTER);
+        infiniteScrollContainer.setStyle("-fx-padding: 20;");
+        
         // Scroll pane for navigation with centered content
-        scrollPane = new ScrollPane(pageImageView);
+        scrollPane = new ScrollPane();
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
         scrollPane.setPannable(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         
-        // Center the image view within the scroll pane
-        VBox centeringContainer = new VBox();
-        centeringContainer.setAlignment(Pos.CENTER);
-        centeringContainer.getChildren().add(pageImageView);
-        scrollPane.setContent(centeringContainer);
+        // Initialize with single page mode
+        setupSinglePageMode();
         
         // Navigation controls
         prevButton = new Button("◀ Previous");
@@ -98,6 +114,11 @@ public class PdfViewerComponent extends BorderPane {
         pageField = new TextField();
         pageField.setPrefWidth(60);
         pageLabel = new Label("Page 0 of 0");
+        
+        // View mode toggle
+        viewModeToggle = new ToggleButton("📄 Single Page");
+        viewModeToggle.setSelected(true);
+        viewModeToggle.setPrefWidth(120);
         
         // Progress controls
         progressBar = new ProgressBar(0);
@@ -112,11 +133,24 @@ public class PdfViewerComponent extends BorderPane {
         zoomSlider.setPrefWidth(150);
     }
     
+    private void setupSinglePageMode() {
+        VBox centeringContainer = new VBox();
+        centeringContainer.setAlignment(Pos.CENTER);
+        centeringContainer.getChildren().add(pageImageView);
+        scrollPane.setContent(centeringContainer);
+    }
+    
+    private void setupInfiniteScrollMode() {
+        scrollPane.setContent(infiniteScrollContainer);
+    }
+    
     private void setupLayout() {
         // Top toolbar
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getChildren().addAll(
+            viewModeToggle,
+            new Separator(),
             prevButton, nextButton,
             new Separator(),
             new Label("Page:"), pageField, pageLabel,
@@ -137,6 +171,9 @@ public class PdfViewerComponent extends BorderPane {
     }
     
     private void setupEventHandlers() {
+        // View mode toggle
+        viewModeToggle.setOnAction(e -> toggleViewMode());
+        
         // Navigation buttons
         prevButton.setOnAction(e -> navigateToPreviousPage());
         nextButton.setOnAction(e -> navigateToNextPage());
@@ -150,12 +187,14 @@ public class PdfViewerComponent extends BorderPane {
             updatePageDisplay();
         });
         
-        // Keyboard navigation
+        // Keyboard navigation (only in single page mode)
         setOnKeyPressed(e -> {
-            if (e.getCode() == KeyCode.LEFT || e.getCode() == KeyCode.PAGE_UP) {
-                navigateToPreviousPage();
-            } else if (e.getCode() == KeyCode.RIGHT || e.getCode() == KeyCode.PAGE_DOWN) {
-                navigateToNextPage();
+            if (currentViewMode == ViewMode.SINGLE_PAGE) {
+                if (e.getCode() == KeyCode.LEFT || e.getCode() == KeyCode.PAGE_UP) {
+                    navigateToPreviousPage();
+                } else if (e.getCode() == KeyCode.RIGHT || e.getCode() == KeyCode.PAGE_DOWN) {
+                    navigateToNextPage();
+                }
             }
         });
         
@@ -165,6 +204,9 @@ public class PdfViewerComponent extends BorderPane {
         // Auto-save progress on scroll
         scrollPane.vvalueProperty().addListener((obs, oldVal, newVal) -> {
             if (currentDocument != null) {
+                if (currentViewMode == ViewMode.INFINITE_SCROLL) {
+                    updateInfiniteScrollProgress();
+                }
                 saveCurrentProgress();
             }
         });
@@ -191,6 +233,171 @@ public class PdfViewerComponent extends BorderPane {
             } else {
                 zoomSlider.setValue(Math.max(0.5, zoomSlider.getValue() - 0.1));
             }
+        }
+    }
+    
+    private void toggleViewMode() {
+        if (currentViewMode == ViewMode.SINGLE_PAGE) {
+            switchToInfiniteScrollMode();
+        } else {
+            switchToSinglePageMode();
+        }
+    }
+    
+    private void switchToSinglePageMode() {
+        currentViewMode = ViewMode.SINGLE_PAGE;
+        viewModeToggle.setText("📄 Single Page");
+        viewModeToggle.setSelected(true);
+        
+        // Update current page based on infinite scroll position before switching
+        if (currentDocument != null && totalPages > 0) {
+            double scrollPos = scrollPane.getVvalue();
+            int pageFromScroll = Math.max(1, Math.min(totalPages, (int) Math.ceil(scrollPos * totalPages)));
+            currentPage = pageFromScroll;
+        }
+        
+        // Preserve current page image if it exists in rendered pages
+        Image currentPageImage = null;
+        if (renderedPages.containsKey(currentPage)) {
+            currentPageImage = renderedPages.get(currentPage).getImage();
+        }
+        
+        // Clear infinite scroll container
+        infiniteScrollContainer.getChildren().clear();
+        renderedPages.clear();
+        
+        // Setup single page mode
+        setupSinglePageMode();
+        
+        // If we have the current page image, set it immediately to avoid blank page
+        if (currentPageImage != null) {
+            pageImageView.setImage(currentPageImage);
+            updatePageDisplay();
+        }
+        
+        // Enable navigation controls
+        prevButton.setDisable(false);
+        nextButton.setDisable(false);
+        pageField.setDisable(false);
+        
+        // Update navigation controls with current page
+        updateNavigationControls();
+        
+        // Render current page (this will refresh the image if needed, but don't clear it first)
+        if (currentDocument != null) {
+            renderCurrentPage(false);
+        }
+    }
+    
+    private void switchToInfiniteScrollMode() {
+        currentViewMode = ViewMode.INFINITE_SCROLL;
+        viewModeToggle.setText("📋 Infinite Scroll");
+        viewModeToggle.setSelected(false);
+        
+        // Setup infinite scroll mode
+        setupInfiniteScrollMode();
+        
+        // Disable page navigation controls (not needed in infinite scroll)
+        prevButton.setDisable(true);
+        nextButton.setDisable(true);
+        pageField.setDisable(true);
+        
+        // Load all pages for infinite scroll
+        if (currentDocument != null) {
+            loadAllPagesForInfiniteScroll();
+        }
+    }
+    
+    private void loadAllPagesForInfiniteScroll() {
+        if (isLoadingPages || currentDocument == null) return;
+        
+        isLoadingPages = true;
+        infiniteScrollContainer.getChildren().clear();
+        renderedPages.clear();
+        
+        Task<Void> loadTask = new Task<Void>() {
+            @Override
+            protected Void call() throws Exception {
+                for (int pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    final int currentPageNum = pageNum;
+                    
+                    // Render page
+                    Image pageImage = pageRenderer.renderPage(currentDocument.getFilePath(), pageNum - 1);
+                    
+                    Platform.runLater(() -> {
+                        // Create image view for this page
+                        ImageView pageView = new ImageView(pageImage);
+                        pageView.setPreserveRatio(true);
+                        pageView.setSmooth(true);
+                        
+                        // Apply zoom
+                        double imageWidth = pageImage.getWidth() * currentZoom;
+                        double imageHeight = pageImage.getHeight() * currentZoom;
+                        pageView.setFitWidth(imageWidth);
+                        pageView.setFitHeight(imageHeight);
+                        
+                        // Add page number label
+                        Label pageNumLabel = new Label("Page " + currentPageNum);
+                        pageNumLabel.setStyle("-fx-font-weight: bold; -fx-padding: 5; -fx-background-color: rgba(0,0,0,0.7); -fx-text-fill: white;");
+                        
+                        VBox pageContainer = new VBox(5);
+                        pageContainer.setAlignment(Pos.CENTER);
+                        pageContainer.getChildren().addAll(pageNumLabel, pageView);
+                        
+                        infiniteScrollContainer.getChildren().add(pageContainer);
+                        renderedPages.put(currentPageNum, pageView);
+                        
+                        // Update progress as pages load
+                        updateInfiniteScrollProgress();
+                    });
+                }
+                return null;
+            }
+            
+            @Override
+            protected void succeeded() {
+                Platform.runLater(() -> {
+                    isLoadingPages = false;
+                    // Scroll to current page position
+                    scrollToPageInInfiniteMode(currentPage);
+                });
+            }
+            
+            @Override
+            protected void failed() {
+                Platform.runLater(() -> {
+                    isLoadingPages = false;
+                    showError("Failed to load pages for infinite scroll: " + getException().getMessage());
+                });
+            }
+        };
+        
+        renderingExecutor.submit(loadTask);
+    }
+    
+    private void scrollToPageInInfiniteMode(int pageNum) {
+        if (currentViewMode != ViewMode.INFINITE_SCROLL || infiniteScrollContainer.getChildren().isEmpty()) {
+            return;
+        }
+        
+        // Calculate scroll position based on page number
+        double scrollPosition = (double) (pageNum - 1) / totalPages;
+        scrollPane.setVvalue(scrollPosition);
+    }
+    
+    private void updateInfiniteScrollProgress() {
+        // In infinite scroll mode, update progress based on scroll position
+        if (currentViewMode == ViewMode.INFINITE_SCROLL) {
+            double scrollPos = scrollPane.getVvalue();
+            int estimatedPage = Math.max(1, Math.min(totalPages, (int) Math.ceil(scrollPos * totalPages)));
+            
+            // Update current page based on scroll position
+            currentPage = estimatedPage;
+            
+            // Update progress display
+            progressBar.setProgress(scrollPos);
+            progressLabel.setText(String.format("%.1f%%", scrollPos * 100));
+            pageLabel.setText(String.format("~%d of %d", estimatedPage, totalPages));
         }
     }
     
@@ -252,10 +459,16 @@ public class PdfViewerComponent extends BorderPane {
     }
     
     private void renderCurrentPage() {
+        renderCurrentPage(true);
+    }
+    
+    private void renderCurrentPage(boolean showLoadingIndicator) {
         if (currentDocument == null) return;
         
-        // Show loading indicator
-        pageImageView.setImage(null);
+        // Only show loading indicator if requested (avoid clearing image during mode switches)
+        if (showLoadingIndicator) {
+            pageImageView.setImage(null);
+        }
         
         Task<Image> renderTask = new Task<Image>() {
             @Override
@@ -283,6 +496,14 @@ public class PdfViewerComponent extends BorderPane {
     }
     
     private void updatePageDisplay() {
+        if (currentViewMode == ViewMode.SINGLE_PAGE) {
+            updateSinglePageDisplay();
+        } else {
+            updateInfiniteScrollDisplay();
+        }
+    }
+    
+    private void updateSinglePageDisplay() {
         if (pageImageView.getImage() != null) {
             double imageWidth = pageImageView.getImage().getWidth() * currentZoom;
             double imageHeight = pageImageView.getImage().getHeight() * currentZoom;
@@ -301,6 +522,18 @@ public class PdfViewerComponent extends BorderPane {
                 Platform.runLater(() -> {
                     centeringContainer.requestLayout();
                 });
+            }
+        }
+    }
+    
+    private void updateInfiniteScrollDisplay() {
+        // Update zoom for all rendered pages in infinite scroll mode
+        for (ImageView pageView : renderedPages.values()) {
+            if (pageView.getImage() != null) {
+                double imageWidth = pageView.getImage().getWidth() * currentZoom;
+                double imageHeight = pageView.getImage().getHeight() * currentZoom;
+                pageView.setFitWidth(imageWidth);
+                pageView.setFitHeight(imageHeight);
             }
         }
     }

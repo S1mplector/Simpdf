@@ -1,11 +1,13 @@
 package com.pdfreader.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.LocalDateTime;
 
 /**
  * Domain model representing a user's reading progress for a PDF document.
  * Tracks the current page and last reading session.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ReadingProgress {
     private String id;
     private String documentId;
