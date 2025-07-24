@@ -1,9 +1,11 @@
 package com.pdfreader.presentation.gui.components;
 
-import com.pdfreader.application.PdfPageRenderer;
-import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.application.BookmarkService;
 import com.pdfreader.application.DocumentSearchService;
 import com.pdfreader.application.LibrarySearchService;
+import com.pdfreader.application.PdfPageRenderer;
+import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.domain.model.Bookmark;
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.domain.model.ReadingProgress;
 import com.pdfreader.domain.model.SearchResult;
@@ -11,13 +13,23 @@ import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Text;
+import javafx.scene.Cursor;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.io.IOException;
@@ -43,6 +55,7 @@ public class PdfViewerComponent extends BorderPane {
     private final ReadingProgressService progressService;
     private final DocumentSearchService documentSearchService;
     private final LibrarySearchService librarySearchService;
+    private final BookmarkService bookmarkService;
     private final ExecutorService renderingExecutor;
     
     // UI Components
@@ -58,6 +71,10 @@ public class PdfViewerComponent extends BorderPane {
     private Slider zoomSlider;
     private ToggleButton viewModeToggle;
     private SearchComponent documentSearchComponent;
+    private ToggleButton bookmarkButton;
+    private boolean bookmarkPlacementMode = false;
+    private ImageView cursorBookmarkIcon;
+    private StackPane bookmarkOverlay;
     
     // State
     private PdfDocument currentDocument;
@@ -79,11 +96,13 @@ public class PdfViewerComponent extends BorderPane {
     }
     
     public PdfViewerComponent(PdfPageRenderer pageRenderer, ReadingProgressService progressService, 
-                             DocumentSearchService documentSearchService, LibrarySearchService librarySearchService) {
+                             DocumentSearchService documentSearchService, LibrarySearchService librarySearchService,
+                             BookmarkService bookmarkService) {
         this.pageRenderer = pageRenderer;
         this.progressService = progressService;
         this.documentSearchService = documentSearchService;
         this.librarySearchService = librarySearchService;
+        this.bookmarkService = bookmarkService;
         this.renderingExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "PDF-Renderer");
             t.setDaemon(true);
@@ -137,6 +156,11 @@ public class PdfViewerComponent extends BorderPane {
                                                     librarySearchService, documentSearchService);
         documentSearchComponent.setOnResultSelected(this::handleSearchResultSelected);
         
+        // Initialize bookmark overlay
+        bookmarkOverlay = new StackPane();
+        bookmarkOverlay.setMouseTransparent(true); // Allow clicks to pass through to content below
+        bookmarkOverlay.setPickOnBounds(false);
+        
         // Progress controls
         progressBar = new ProgressBar(0);
         progressBar.setPrefWidth(200);
@@ -148,6 +172,17 @@ public class PdfViewerComponent extends BorderPane {
         zoomSlider.setShowTickMarks(true);
         zoomSlider.setMajorTickUnit(0.5);
         zoomSlider.setPrefWidth(150);
+        
+        // Bookmark button
+        bookmarkButton = new ToggleButton("🔖");
+        bookmarkButton.setStyle(getUniformButtonStyle());
+        bookmarkButton.setTooltip(new Tooltip("Add Bookmark"));
+        bookmarkButton.setOnAction(e -> toggleBookmarkMode());
+        
+        // Initialize bookmark overlay
+        bookmarkOverlay = new StackPane();
+        bookmarkOverlay.setMouseTransparent(false);
+        bookmarkOverlay.setPickOnBounds(false);
     }
     
     private void setupSinglePageMode() {
@@ -175,16 +210,23 @@ public class PdfViewerComponent extends BorderPane {
             new Separator(),
             new Label("Page:"), pageField, pageLabel,
             new Separator(),
+            bookmarkButton,
+            new Separator(),
             new Label("Progress:"), progressBar, progressLabel,
             new Separator(),
             new Label("Zoom:"), zoomSlider
         );
         toolbar.setStyle("-fx-padding: 10; -fx-background-color: #f0f0f0;");
         
-        // Center content
+        // Center content with bookmark overlay
         VBox centerContent = new VBox();
-        centerContent.getChildren().add(scrollPane);
-        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        
+        // Create a stack pane to overlay bookmarks on the scroll pane
+        StackPane contentWithBookmarks = new StackPane();
+        contentWithBookmarks.getChildren().addAll(scrollPane, bookmarkOverlay);
+        
+        centerContent.getChildren().add(contentWithBookmarks);
+        VBox.setVgrow(contentWithBookmarks, Priority.ALWAYS);
         
         setTop(toolbar);
         setCenter(centerContent);
@@ -501,6 +543,8 @@ public class PdfViewerComponent extends BorderPane {
                 Platform.runLater(() -> {
                     pageImageView.setImage(getValue());
                     updatePageDisplay();
+                    // Load bookmarks for the current page
+                    loadBookmarksForCurrentPage();
                 });
             }
             
@@ -551,6 +595,8 @@ public class PdfViewerComponent extends BorderPane {
                 // Force layout update
                 Platform.runLater(() -> {
                     centeringContainer.requestLayout();
+                    // Reposition bookmarks after layout update
+                    loadBookmarksForCurrentPage();
                 });
             }
         }
@@ -660,6 +706,283 @@ public class PdfViewerComponent extends BorderPane {
                "-fx-padding: 8px 12px; " +
                "-fx-font-size: 12px; " +
                "-fx-cursor: hand;";
+    }
+    
+    /**
+     * Toggle bookmark placement mode
+     */
+    private void toggleBookmarkMode() {
+        bookmarkPlacementMode = !bookmarkPlacementMode;
+        
+        if (bookmarkPlacementMode) {
+            // Enter bookmark placement mode
+            bookmarkButton.setText("✖");
+            bookmarkButton.setTooltip(new Tooltip("Cancel Bookmark Placement"));
+            enableBookmarkPlacement();
+        } else {
+            // Exit bookmark placement mode
+            bookmarkButton.setText("🔖");
+            bookmarkButton.setTooltip(new Tooltip("Add Bookmark"));
+            disableBookmarkPlacement();
+        }
+    }
+    
+    /**
+     * Enable bookmark placement mode - cursor follows mouse
+     */
+    private void enableBookmarkPlacement() {
+        // Create cursor bookmark icon
+        cursorBookmarkIcon = createBookmarkIcon(16, 16);
+        cursorBookmarkIcon.setVisible(false);
+        bookmarkOverlay.getChildren().add(cursorBookmarkIcon);
+        
+        // Add mouse event handlers to the content area
+        scrollPane.setOnMouseMoved(e -> handleBookmarkCursorMove(e));
+        scrollPane.setOnMouseClicked(e -> handleBookmarkPlacement(e));
+        scrollPane.setOnMouseEntered(e -> cursorBookmarkIcon.setVisible(true));
+        scrollPane.setOnMouseExited(e -> cursorBookmarkIcon.setVisible(false));
+        
+        // Change cursor style
+        scrollPane.setCursor(Cursor.CROSSHAIR);
+    }
+    
+    /**
+     * Disable bookmark placement mode
+     */
+    private void disableBookmarkPlacement() {
+        // Remove cursor bookmark icon
+        if (cursorBookmarkIcon != null) {
+            bookmarkOverlay.getChildren().remove(cursorBookmarkIcon);
+            cursorBookmarkIcon = null;
+        }
+        
+        // Remove mouse event handlers
+        scrollPane.setOnMouseMoved(null);
+        scrollPane.setOnMouseClicked(null);
+        scrollPane.setOnMouseEntered(null);
+        scrollPane.setOnMouseExited(null);
+        
+        // Reset cursor
+        scrollPane.setCursor(Cursor.DEFAULT);
+    }
+    
+    /**
+     * Handle mouse movement in bookmark placement mode
+     */
+    private void handleBookmarkCursorMove(MouseEvent event) {
+        if (bookmarkPlacementMode && cursorBookmarkIcon != null) {
+            // Position the cursor bookmark icon at mouse location
+            cursorBookmarkIcon.setLayoutX(event.getX() - 8); // Center the icon
+            cursorBookmarkIcon.setLayoutY(event.getY() - 8);
+        }
+    }
+    
+    /**
+     * Handle bookmark placement on click
+     */
+    private void handleBookmarkPlacement(MouseEvent event) {
+        if (bookmarkPlacementMode && currentDocument != null) {
+            // Get the actual click coordinates
+            double clickX = event.getX();
+            double clickY = event.getY();
+            
+            // Calculate relative position on the page (0-1 coordinates)
+            double relativeX = clickX / scrollPane.getWidth();
+            double relativeY = clickY / scrollPane.getHeight();
+            
+            // Ensure coordinates are within bounds
+            relativeX = Math.max(0, Math.min(1, relativeX));
+            relativeY = Math.max(0, Math.min(1, relativeY));
+            
+            // Create bookmark
+            Bookmark bookmark = bookmarkService.createBookmark(
+                currentDocument.getId(),
+                currentPage,
+                relativeX,
+                relativeY,
+                "Page " + currentPage + " Bookmark"
+            );
+            
+            // Debug output
+            System.out.println("Creating bookmark at click position: (" + clickX + ", " + clickY + ") relative: (" + relativeX + ", " + relativeY + ")");
+            
+            // Add bookmark visual to overlay at the exact click position
+            addBookmarkVisual(bookmark, clickX, clickY);
+            
+            // Exit bookmark placement mode
+            bookmarkButton.setSelected(false);
+            toggleBookmarkMode();
+            
+            // Show confirmation
+            Platform.runLater(() -> {
+                Alert confirmation = new Alert(Alert.AlertType.INFORMATION);
+                confirmation.setTitle("Bookmark Added");
+                confirmation.setHeaderText(null);
+                confirmation.setContentText("Bookmark placed successfully on page " + currentPage);
+                confirmation.showAndWait();
+            });
+            
+            event.consume();
+        }
+    }
+    
+    /**
+     * Add a visual bookmark indicator to the overlay
+     */
+    private void addBookmarkVisual(Bookmark bookmark, double x, double y) {
+        ImageView bookmarkVisual = createBookmarkIcon(24, 24);
+        
+        // Position the bookmark relative to the scroll pane content
+        // Convert from relative coordinates to actual pixel coordinates on the current page
+        double imageWidth = pageImageView.getBoundsInLocal().getWidth();
+        double imageHeight = pageImageView.getBoundsInLocal().getHeight();
+        
+        // Calculate actual position on the image
+        double actualX = bookmark.getX() * imageWidth;
+        double actualY = bookmark.getY() * imageHeight;
+        
+        // Get the scroll pane's viewport bounds
+        double scrollPaneX = scrollPane.getBoundsInParent().getMinX();
+        double scrollPaneY = scrollPane.getBoundsInParent().getMinY();
+        
+        // Get the image's position within the scroll pane
+        double imageX = pageImageView.getBoundsInParent().getMinX();
+        double imageY = pageImageView.getBoundsInParent().getMinY();
+        
+        // Calculate final position in the overlay coordinate system
+        double finalX = scrollPaneX + imageX + actualX - 12; // Center the bookmark
+        double finalY = scrollPaneY + imageY + actualY - 12;
+        
+        bookmarkVisual.setLayoutX(finalX);
+        bookmarkVisual.setLayoutY(finalY);
+        
+        // Make sure it's visible and clickable
+        bookmarkVisual.setVisible(true);
+        bookmarkVisual.setMouseTransparent(false);
+        bookmarkVisual.setPickOnBounds(true);
+        
+        // Add a subtle drop shadow for better visibility
+        DropShadow dropShadow = new DropShadow();
+        dropShadow.setColor(Color.BLACK);
+        dropShadow.setOffsetX(1);
+        dropShadow.setOffsetY(1);
+        dropShadow.setRadius(3);
+        bookmarkVisual.setEffect(dropShadow);
+        
+        // Add tooltip with bookmark info
+        Tooltip tooltip = new Tooltip(bookmark.getTitle() + "\nPage: " + bookmark.getPageNumber() + "\nClick to view, Right-click to delete");
+        Tooltip.install(bookmarkVisual, tooltip);
+        
+        // Add click handler to show bookmark info
+        bookmarkVisual.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY) {
+                // Left click - show bookmark details
+                Alert info = new Alert(Alert.AlertType.INFORMATION);
+                info.setTitle("Bookmark Details");
+                info.setHeaderText(bookmark.getTitle());
+                info.setContentText("Page: " + bookmark.getPageNumber() + "\nCreated: " + bookmark.getCreatedAt().toString());
+                info.showAndWait();
+            }
+            e.consume();
+        });
+        
+        // Add context menu for bookmark operations
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem deleteItem = new MenuItem("Delete Bookmark");
+        deleteItem.setOnAction(e -> {
+            bookmarkService.deleteBookmark(bookmark.getId());
+            bookmarkOverlay.getChildren().remove(bookmarkVisual);
+        });
+        contextMenu.getItems().add(deleteItem);
+        bookmarkVisual.setOnContextMenuRequested(e -> 
+            contextMenu.show(bookmarkVisual, e.getScreenX(), e.getScreenY()));
+        
+        // Add the bookmark to the overlay
+        bookmarkOverlay.getChildren().add(bookmarkVisual);
+        
+        // Debug output
+        System.out.println("Added bookmark visual at position: (" + x + ", " + y + ") with ID: " + bookmark.getId());
+    }
+    
+    /**
+     * Create a bookmark icon
+     */
+    private ImageView createBookmarkIcon(int width, int height) {
+        try {
+            String iconPath = "/com/pdfreader/presentation/gui/components/assets/icons/bookmark.png";
+            Image icon = new Image(getClass().getResourceAsStream(iconPath));
+            if (icon.isError()) {
+                throw new Exception("Icon failed to load");
+            }
+            ImageView imageView = new ImageView(icon);
+            imageView.setFitWidth(width);
+            imageView.setFitHeight(height);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            return imageView;
+        } catch (Exception e) {
+            // Create a fallback visual bookmark using a colored rectangle
+            Rectangle bookmarkRect = new Rectangle(width, height);
+            bookmarkRect.setFill(Color.GOLD);
+            bookmarkRect.setStroke(Color.DARKGOLDENROD);
+            bookmarkRect.setStrokeWidth(1);
+            bookmarkRect.setArcWidth(4);
+            bookmarkRect.setArcHeight(4);
+            
+            // Add bookmark symbol text
+            Text bookmarkText = new Text("🔖");
+            bookmarkText.setFill(Color.DARKRED);
+            bookmarkText.setStyle("-fx-font-size: " + (width * 0.8) + "px;");
+            
+            StackPane bookmarkPane = new StackPane();
+            bookmarkPane.getChildren().addAll(bookmarkRect, bookmarkText);
+            bookmarkPane.setPrefSize(width, height);
+            
+            // Convert StackPane to ImageView for consistency
+            ImageView fallbackView = new ImageView();
+            fallbackView.setFitWidth(width);
+            fallbackView.setFitHeight(height);
+            
+            // We'll return the StackPane as a Node, but we need ImageView for the interface
+            // So let's create a simple colored rectangle as ImageView
+            WritableImage fallbackImage = new WritableImage(width, height);
+            PixelWriter pixelWriter = fallbackImage.getPixelWriter();
+            
+            // Draw a simple bookmark shape
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    if (x == 0 || x == width-1 || y == 0 || y == height-1) {
+                        pixelWriter.setColor(x, y, Color.DARKGOLDENROD);
+                    } else {
+                        pixelWriter.setColor(x, y, Color.GOLD);
+                    }
+                }
+            }
+            
+            fallbackView.setImage(fallbackImage);
+            return fallbackView;
+        }
+    }
+    
+    /**
+     * Load and display bookmarks for the current page
+     */
+    private void loadBookmarksForCurrentPage() {
+        if (currentDocument == null || bookmarkService == null) {
+            return;
+        }
+        
+        // Clear existing bookmark visuals
+        bookmarkOverlay.getChildren().clear();
+        
+        // Load bookmarks for current page
+        List<Bookmark> pageBookmarks = bookmarkService.getBookmarksForPage(currentDocument.getId(), currentPage);
+        
+        // Add visual indicators for each bookmark using their stored relative coordinates
+        for (Bookmark bookmark : pageBookmarks) {
+            // Use the stored relative coordinates directly - addBookmarkVisual will handle the conversion
+            addBookmarkVisual(bookmark, 0, 0); // x,y parameters not used anymore since we use relative coords
+        }
     }
     
     public void cleanup() {
