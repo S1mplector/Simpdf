@@ -2,8 +2,11 @@ package com.pdfreader.presentation.gui.components;
 
 import com.pdfreader.application.PdfPageRenderer;
 import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.application.DocumentSearchService;
+import com.pdfreader.application.LibrarySearchService;
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.domain.model.ReadingProgress;
+import com.pdfreader.domain.model.SearchResult;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.geometry.Pos;
@@ -38,6 +41,8 @@ public class PdfViewerComponent extends BorderPane {
     
     private final PdfPageRenderer pageRenderer;
     private final ReadingProgressService progressService;
+    private final DocumentSearchService documentSearchService;
+    private final LibrarySearchService librarySearchService;
     private final ExecutorService renderingExecutor;
     
     // UI Components
@@ -52,6 +57,7 @@ public class PdfViewerComponent extends BorderPane {
     private ProgressBar progressBar;
     private Slider zoomSlider;
     private ToggleButton viewModeToggle;
+    private SearchComponent documentSearchComponent;
     
     // State
     private PdfDocument currentDocument;
@@ -72,9 +78,12 @@ public class PdfViewerComponent extends BorderPane {
         void onPageChanged(int newPage, int totalPages);
     }
     
-    public PdfViewerComponent(PdfPageRenderer pageRenderer, ReadingProgressService progressService) {
+    public PdfViewerComponent(PdfPageRenderer pageRenderer, ReadingProgressService progressService, 
+                             DocumentSearchService documentSearchService, LibrarySearchService librarySearchService) {
         this.pageRenderer = pageRenderer;
         this.progressService = progressService;
+        this.documentSearchService = documentSearchService;
+        this.librarySearchService = librarySearchService;
         this.renderingExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "PDF-Renderer");
             t.setDaemon(true);
@@ -119,6 +128,11 @@ public class PdfViewerComponent extends BorderPane {
         viewModeToggle = new ToggleButton("📄 Single Page");
         viewModeToggle.setSelected(true);
         viewModeToggle.setPrefWidth(120);
+        
+        // Document search component
+        documentSearchComponent = new SearchComponent(SearchComponent.SearchMode.DOCUMENT_SEARCH, 
+                                                    librarySearchService, documentSearchService);
+        documentSearchComponent.setOnResultSelected(this::handleSearchResultSelected);
         
         // Progress controls
         progressBar = new ProgressBar(0);
@@ -574,6 +588,26 @@ public class PdfViewerComponent extends BorderPane {
         alert.setHeaderText("Error");
         alert.setContentText(message);
         alert.showAndWait();
+    }
+    
+    /**
+     * Handle search result selection from the search component
+     */
+    private void handleSearchResultSelected(SearchResult searchResult) {
+        try {
+            // Navigate to the page containing the search result
+            int targetPage = searchResult.getPageNumber();
+            if (targetPage >= 1 && targetPage <= totalPages) {
+                navigateToPage(targetPage);
+                
+                // Update search component with current document context
+                if (currentDocument != null) {
+                    documentSearchComponent.setCurrentDocument(currentDocument);
+                }
+            }
+        } catch (Exception e) {
+            showError("Failed to navigate to search result: " + e.getMessage());
+        }
     }
     
     // Public API

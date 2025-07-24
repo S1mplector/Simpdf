@@ -1,9 +1,13 @@
+C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\DocumentSearchService.java
+C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\LibrarySearchService.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\PdfApplicationService.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\PdfFolderScannerService.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\PdfPageRenderer.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\application\ReadingProgressService.java
+C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\model\LibrarySearchCriteria.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\model\PdfDocument.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\model\ReadingProgress.java
+C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\model\SearchResult.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\repository\PdfDocumentRepository.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\repository\ReadingProgressRepository.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\domain\service\PdfProcessingService.java
@@ -18,5 +22,6 @@ C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\PdfReaderApplic
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\cli\PdfReaderCli.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\gui\components\DocumentLibraryComponent.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\gui\components\PdfViewerComponent.java
+C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\gui\components\SearchComponent.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\gui\PdfReaderGuiApplication.java
 C:\Users\Sim\Desktop\Projects\simpdf\src\main\java\com\pdfreader\presentation\gui\PdfReaderGuiController.java

@@ -4,6 +4,8 @@ import com.pdfreader.application.PdfApplicationService;
 import com.pdfreader.application.PdfFolderScannerService;
 import com.pdfreader.application.PdfPageRenderer;
 import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.application.LibrarySearchService;
+import com.pdfreader.application.DocumentSearchService;
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.presentation.gui.components.DocumentLibraryComponent;
 import com.pdfreader.presentation.gui.components.PdfViewerComponent;
@@ -36,6 +38,12 @@ public class PdfReaderGuiController implements Initializable {
     
     @Autowired
     private PdfFolderScannerService pdfFolderScannerService;
+    
+    @Autowired
+    private LibrarySearchService librarySearchService;
+    
+    @Autowired
+    private DocumentSearchService documentSearchService;
 
     @FXML
     private BorderPane rootPane;
@@ -66,8 +74,8 @@ public class PdfReaderGuiController implements Initializable {
     
     private void initializeComponents() {
         // Initialize modular components
-        documentLibrary = new DocumentLibraryComponent(pdfApplicationService, readingProgressService, pdfFolderScannerService);
-        pdfViewer = new PdfViewerComponent(pdfPageRenderer, readingProgressService);
+        documentLibrary = new DocumentLibraryComponent(pdfApplicationService, readingProgressService, pdfFolderScannerService, librarySearchService, documentSearchService);
+        pdfViewer = new PdfViewerComponent(pdfPageRenderer, readingProgressService, documentSearchService, librarySearchService);
         
         // Configure back button
         backToLibraryButton.setVisible(false);

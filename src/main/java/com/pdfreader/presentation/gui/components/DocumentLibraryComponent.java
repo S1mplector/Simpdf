@@ -11,8 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.pdfreader.application.PdfApplicationService;
 import com.pdfreader.application.PdfFolderScannerService;
 import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.application.LibrarySearchService;
+import com.pdfreader.application.DocumentSearchService;
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.domain.model.ReadingProgress;
+import com.pdfreader.domain.model.SearchResult;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -40,6 +43,8 @@ public class DocumentLibraryComponent extends VBox {
     private final PdfApplicationService documentService;
     private final ReadingProgressService progressService;
     private final PdfFolderScannerService folderScannerService;
+    private final LibrarySearchService librarySearchService;
+    private final DocumentSearchService documentSearchService;
 
     // UI Components
     private VBox root;
@@ -49,6 +54,7 @@ public class DocumentLibraryComponent extends VBox {
     private Button refreshButton;
     private Label statusLabel;
     private Label folderPathLabel;
+    private SearchComponent searchComponent;
 
     // Data
     private ObservableList<DocumentWithProgress> documentsList = FXCollections.observableArrayList();
@@ -114,10 +120,14 @@ public class DocumentLibraryComponent extends VBox {
     @Autowired
     public DocumentLibraryComponent(PdfApplicationService documentService,
                                      ReadingProgressService progressService,
-                                     PdfFolderScannerService folderScannerService) {
+                                     PdfFolderScannerService folderScannerService,
+                                     LibrarySearchService librarySearchService,
+                                     DocumentSearchService documentSearchService) {
         this.documentService = documentService;
         this.progressService = progressService;
         this.folderScannerService = folderScannerService;
+        this.librarySearchService = librarySearchService;
+        this.documentSearchService = documentSearchService;
         initializeComponent();
     }
 
@@ -136,6 +146,11 @@ public class DocumentLibraryComponent extends VBox {
         // Create buttons
         createButtons();
 
+        // Create search component
+        searchComponent = new SearchComponent(SearchComponent.SearchMode.LIBRARY_SEARCH, 
+                                            librarySearchService, documentSearchService);
+        searchComponent.setOnResultSelected(this::handleSearchResultSelected);
+        
         // Create table
         createDocumentsTable();
 
@@ -145,7 +160,7 @@ public class DocumentLibraryComponent extends VBox {
 
         // Layout
         HBox buttonBox = new HBox(10, selectFolderButton, deleteButton, refreshButton);
-        root.getChildren().addAll(titleLabel, folderPathLabel, buttonBox, documentsTable, statusLabel);
+        root.getChildren().addAll(titleLabel, folderPathLabel, buttonBox, searchComponent, documentsTable, statusLabel);
         
         // Add the root VBox to this component
         this.getChildren().add(root);
@@ -338,6 +353,21 @@ public class DocumentLibraryComponent extends VBox {
         alert.setHeaderText(header);
         alert.setContentText(content);
         alert.showAndWait();
+    }
+    
+    /**
+     * Handle search result selection from the search component
+     */
+    private void handleSearchResultSelected(SearchResult searchResult) {
+        try {
+            // Find the document by ID and open it
+            PdfDocument document = documentService.getDocumentById(searchResult.getDocumentId());
+            if (document != null && selectionListener != null) {
+                selectionListener.onDocumentSelected(document);
+            }
+        } catch (Exception e) {
+            showErrorAlert("Search Error", "Failed to open selected document", e.getMessage());
+        }
     }
     
     // Public API
