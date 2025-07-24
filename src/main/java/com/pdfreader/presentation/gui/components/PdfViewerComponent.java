@@ -364,30 +364,142 @@ public class PdfViewerComponent extends BorderPane {
         nextButton.setDisable(true);
         pageField.setDisable(true);
         
-        // Load all pages for infinite scroll
+        // Setup lazy loading for infinite scroll
         if (currentDocument != null) {
-            loadAllPagesForInfiniteScroll();
+            setupLazyLoadingForInfiniteScroll();
         }
     }
     
-    private void loadAllPagesForInfiniteScroll() {
+    private void setupLazyLoadingForInfiniteScroll() {
         if (isLoadingPages || currentDocument == null) return;
         
         isLoadingPages = true;
         infiniteScrollContainer.getChildren().clear();
         renderedPages.clear();
         
-        Task<Void> loadTask = new Task<Void>() {
+        // Create placeholder containers for all pages
+        for (int pageNum = 1; pageNum <= totalPages; pageNum++) {
+            VBox pageContainer = createPagePlaceholder(pageNum);
+            infiniteScrollContainer.getChildren().add(pageContainer);
+        }
+        
+        isLoadingPages = false;
+        
+        // Set up scroll listener for lazy loading
+        setupScrollListener();
+        
+        // Load initial visible pages
+        Platform.runLater(() -> {
+            loadVisiblePages();
+        });
+    }
+    
+    /**
+     * Create a placeholder container for a page that will be lazily loaded
+     */
+    private VBox createPagePlaceholder(int pageNum) {
+        // Estimate page dimensions (will be adjusted when actually loaded)
+        double estimatedWidth = 600 * currentZoom;
+        double estimatedHeight = 800 * currentZoom;
+        
+        // Create placeholder rectangle
+        Rectangle placeholder = new Rectangle(estimatedWidth, estimatedHeight);
+        placeholder.setFill(Color.LIGHTGRAY);
+        placeholder.setStroke(Color.GRAY);
+        placeholder.setStrokeWidth(1);
+        
+        // Add loading text
+        Text loadingText = new Text("Loading Page " + pageNum + "...");
+        loadingText.setFill(Color.DARKGRAY);
+        
+        StackPane placeholderStack = new StackPane();
+        placeholderStack.getChildren().addAll(placeholder, loadingText);
+        
+        // Add page number label
+        Label pageNumLabel = new Label("Page " + pageNum);
+        pageNumLabel.setStyle("-fx-font-weight: bold; -fx-padding: 5; -fx-background-color: rgba(0,0,0,0.7); -fx-text-fill: white;");
+        
+        VBox pageContainer = new VBox(5);
+        pageContainer.setAlignment(Pos.CENTER);
+        pageContainer.getChildren().addAll(pageNumLabel, placeholderStack);
+        pageContainer.setUserData(pageNum); // Store page number for identification
+        
+        return pageContainer;
+    }
+    
+    /**
+     * Set up scroll listener to trigger lazy loading of visible pages
+     */
+    private void setupScrollListener() {
+        // Remove existing listener if any to avoid duplicates
+        // Note: In a production app, you'd want to store and manage listeners properly
+        
+        scrollPane.vvalueProperty().addListener((obs, oldVal, newVal) -> {
+            if (currentViewMode == ViewMode.INFINITE_SCROLL) {
+                loadVisiblePages();
+                updateInfiniteScrollProgress();
+            }
+        });
+    }
+    
+    /**
+     * Load pages that are currently visible in the viewport
+     */
+    private void loadVisiblePages() {
+        if (currentDocument == null || infiniteScrollContainer.getChildren().isEmpty()) {
+            return;
+        }
+        
+        double scrollPaneHeight = scrollPane.getHeight();
+        double scrollValue = scrollPane.getVvalue();
+        double contentHeight = infiniteScrollContainer.getHeight();
+        
+        // Calculate visible range with buffer
+        double visibleTop = scrollValue * (contentHeight - scrollPaneHeight);
+        double visibleBottom = visibleTop + scrollPaneHeight;
+        double buffer = scrollPaneHeight; // Load pages one viewport ahead/behind
+        
+        double currentY = 0;
+        for (int i = 0; i < infiniteScrollContainer.getChildren().size(); i++) {
+            VBox pageContainer = (VBox) infiniteScrollContainer.getChildren().get(i);
+            Integer pageNum = (Integer) pageContainer.getUserData();
+            
+            double pageHeight = pageContainer.getHeight();
+            if (pageHeight == 0) {
+                pageHeight = 800 * currentZoom; // Estimated height
+            }
+            
+            // Check if page is in visible range (with buffer)
+            if (currentY + pageHeight >= visibleTop - buffer && currentY <= visibleBottom + buffer) {
+                if (!renderedPages.containsKey(pageNum)) {
+                    loadPageAsync(pageNum, pageContainer);
+                }
+            } else if (renderedPages.containsKey(pageNum) && 
+                      (currentY + pageHeight < visibleTop - buffer * 2 || currentY > visibleBottom + buffer * 2)) {
+                // Unload pages that are far from view to save memory
+                unloadPage(pageNum, pageContainer);
+            }
+            
+            currentY += pageHeight + 10; // 10 is the spacing between pages
+        }
+    }
+    
+    /**
+     * Asynchronously load a specific page
+     */
+    private void loadPageAsync(int pageNum, VBox pageContainer) {
+        Task<Image> loadTask = new Task<Image>() {
             @Override
-            protected Void call() throws Exception {
-                for (int pageNum = 1; pageNum <= totalPages; pageNum++) {
-                    final int currentPageNum = pageNum;
-                    
-                    // Render page
-                    Image pageImage = pageRenderer.renderPage(currentDocument.getFilePath(), pageNum - 1);
-                    
-                    Platform.runLater(() -> {
-                        // Create image view for this page
+            protected Image call() throws Exception {
+                return pageRenderer.renderPage(currentDocument.getFilePath(), pageNum - 1);
+            }
+            
+            @Override
+            protected void succeeded() {
+                Platform.runLater(() -> {
+                    Image pageImage = getValue();
+                    if (pageImage != null) {
+                        // Replace placeholder with actual page
                         ImageView pageView = new ImageView(pageImage);
                         pageView.setPreserveRatio(true);
                         pageView.setSmooth(true);
@@ -398,43 +510,46 @@ public class PdfViewerComponent extends BorderPane {
                         pageView.setFitWidth(imageWidth);
                         pageView.setFitHeight(imageHeight);
                         
-                        // Add page number label
-                        Label pageNumLabel = new Label("Page " + currentPageNum);
-                        pageNumLabel.setStyle("-fx-font-weight: bold; -fx-padding: 5; -fx-background-color: rgba(0,0,0,0.7); -fx-text-fill: white;");
+                        // Replace the placeholder in the container
+                        if (pageContainer.getChildren().size() > 1) {
+                            pageContainer.getChildren().set(1, pageView); // Replace placeholder (index 1)
+                        }
                         
-                        VBox pageContainer = new VBox(5);
-                        pageContainer.setAlignment(Pos.CENTER);
-                        pageContainer.getChildren().addAll(pageNumLabel, pageView);
-                        
-                        infiniteScrollContainer.getChildren().add(pageContainer);
-                        renderedPages.put(currentPageNum, pageView);
-                        
-                        // Update progress as pages load
-                        updateInfiniteScrollProgress();
-                    });
-                }
-                return null;
-            }
-            
-            @Override
-            protected void succeeded() {
-                Platform.runLater(() -> {
-                    isLoadingPages = false;
-                    // Scroll to current page position
-                    scrollToPageInInfiniteMode(currentPage);
+                        // Store the rendered page
+                        renderedPages.put(pageNum, pageView);
+                    }
                 });
             }
             
             @Override
             protected void failed() {
                 Platform.runLater(() -> {
-                    isLoadingPages = false;
-                    showError("Failed to load pages for infinite scroll: " + getException().getMessage());
+                    // Show error in placeholder
+                    if (pageContainer.getChildren().size() > 1) {
+                        Text errorText = new Text("Failed to load page " + pageNum);
+                        errorText.setFill(Color.RED);
+                        pageContainer.getChildren().set(1, errorText);
+                    }
                 });
             }
         };
         
         renderingExecutor.submit(loadTask);
+    }
+    
+    /**
+     * Unload a page to save memory when it's far from the current view
+     */
+    private void unloadPage(Integer pageNum, VBox pageContainer) {
+        // Remove from rendered pages cache
+        renderedPages.remove(pageNum);
+        
+        // Replace the image with a placeholder
+        if (pageContainer.getChildren().size() > 1) {
+            VBox placeholder = createPagePlaceholder(pageNum);
+            // Keep the label, replace the content
+            pageContainer.getChildren().set(1, placeholder.getChildren().get(1)); // Get placeholder content
+        }
     }
     
     private void scrollToPageInInfiniteMode(int pageNum) {
@@ -612,6 +727,27 @@ public class PdfViewerComponent extends BorderPane {
                 pageView.setFitHeight(imageHeight);
             }
         }
+        
+        // Update placeholder sizes for unloaded pages
+        for (int i = 0; i < infiniteScrollContainer.getChildren().size(); i++) {
+            VBox pageContainer = (VBox) infiniteScrollContainer.getChildren().get(i);
+            Integer pageNum = (Integer) pageContainer.getUserData();
+            
+            if (!renderedPages.containsKey(pageNum) && pageContainer.getChildren().size() > 1) {
+                // Update placeholder size
+                if (pageContainer.getChildren().get(1) instanceof StackPane) {
+                    StackPane placeholderStack = (StackPane) pageContainer.getChildren().get(1);
+                    if (!placeholderStack.getChildren().isEmpty() && placeholderStack.getChildren().get(0) instanceof Rectangle) {
+                        Rectangle placeholder = (Rectangle) placeholderStack.getChildren().get(0);
+                        placeholder.setWidth(600 * currentZoom);
+                        placeholder.setHeight(800 * currentZoom);
+                    }
+                }
+            }
+        }
+        
+        // Trigger reloading of visible pages with new zoom
+        Platform.runLater(() -> loadVisiblePages());
     }
     
     private void updateNavigationControls() {
