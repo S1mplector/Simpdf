@@ -108,8 +108,8 @@ public class PdfViewerComponent extends BorderPane {
         
         // Scroll pane for navigation with centered content
         scrollPane = new ScrollPane();
-        scrollPane.setFitToWidth(true);
-        scrollPane.setFitToHeight(true);
+        scrollPane.setFitToWidth(false);  // Allow horizontal scrolling when zoomed
+        scrollPane.setFitToHeight(false); // Allow vertical scrolling when zoomed
         scrollPane.setPannable(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
@@ -154,6 +154,9 @@ public class PdfViewerComponent extends BorderPane {
         VBox centeringContainer = new VBox();
         centeringContainer.setAlignment(Pos.CENTER);
         centeringContainer.getChildren().add(pageImageView);
+        
+        // Allow the container to grow beyond the scroll pane size for proper scrolling
+        centeringContainer.setFillWidth(false);
         scrollPane.setContent(centeringContainer);
     }
     
@@ -528,14 +531,24 @@ public class PdfViewerComponent extends BorderPane {
             pageImageView.setFitWidth(imageWidth);
             pageImageView.setFitHeight(imageHeight);
             
-            // Ensure the centering container maintains proper sizing
+            // Update the centering container to allow proper scrolling
             VBox centeringContainer = (VBox) scrollPane.getContent();
             if (centeringContainer != null) {
-                // Set minimum size to ensure centering works properly
-                centeringContainer.setMinWidth(scrollPane.getWidth());
-                centeringContainer.setMinHeight(scrollPane.getHeight());
+                // For centering when image is smaller than viewport
+                double scrollPaneWidth = scrollPane.getWidth();
+                double scrollPaneHeight = scrollPane.getHeight();
                 
-                // Force layout update to ensure proper centering
+                // Set container size to be at least as large as the scroll pane for centering,
+                // but allow it to grow larger for scrolling when zoomed
+                double containerWidth = Math.max(scrollPaneWidth, imageWidth + 20); // Add padding
+                double containerHeight = Math.max(scrollPaneHeight, imageHeight + 20); // Add padding
+                
+                centeringContainer.setPrefWidth(containerWidth);
+                centeringContainer.setPrefHeight(containerHeight);
+                centeringContainer.setMinWidth(containerWidth);
+                centeringContainer.setMinHeight(containerHeight);
+                
+                // Force layout update
                 Platform.runLater(() -> {
                     centeringContainer.requestLayout();
                 });

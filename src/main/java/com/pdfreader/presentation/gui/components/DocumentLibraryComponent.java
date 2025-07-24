@@ -28,6 +28,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -181,23 +182,26 @@ public class DocumentLibraryComponent extends VBox {
     }
 
     private void createButtons() {
-        // Select folder button with icon
-        selectFolderButton = new Button("Select PDF Folder");
-        selectFolderButton.setGraphic(createIcon("Select.png", 20, 20));
-        selectFolderButton.setStyle(getUniformButtonStyle());
+        // Select folder button - icon only with tooltip
+        selectFolderButton = new Button();
+        selectFolderButton.setGraphic(createIcon("Select.png", 24, 24));
+        selectFolderButton.setStyle(getIconOnlyButtonStyle());
+        selectFolderButton.setTooltip(new Tooltip("Select PDF Folder"));
         selectFolderButton.setOnAction(e -> selectPdfFolder());
 
-        // Delete button with icon
-        deleteButton = new Button("Delete");
-        deleteButton.setGraphic(createIcon("delete.png", 20, 20));
-        deleteButton.setStyle(getUniformButtonStyle());
+        // Delete button - icon only with tooltip
+        deleteButton = new Button();
+        deleteButton.setGraphic(createIcon("delete.png", 24, 24));
+        deleteButton.setStyle(getIconOnlyButtonStyle());
+        deleteButton.setTooltip(new Tooltip("Delete Selected Document"));
         deleteButton.setOnAction(e -> deleteSelectedDocument());
         deleteButton.setDisable(true);
 
-        // Rescan button with icon
-        refreshButton = new Button("Rescan Folder");
-        refreshButton.setGraphic(createIcon("rescan.png", 20, 20));
-        refreshButton.setStyle(getUniformButtonStyle());
+        // Rescan button - icon only with tooltip
+        refreshButton = new Button();
+        refreshButton.setGraphic(createIcon("rescan.png", 24, 24));
+        refreshButton.setStyle(getIconOnlyButtonStyle());
+        refreshButton.setTooltip(new Tooltip("Rescan Folder for PDFs"));
         refreshButton.setOnAction(e -> rescanFolder());
         refreshButton.setDisable(true);
     }
@@ -424,6 +428,23 @@ public class DocumentLibraryComponent extends VBox {
                "-fx-padding: 8px 12px; " +
                "-fx-font-size: 12px; " +
                "-fx-cursor: hand;";
+    }
+    
+    /**
+     * Get icon-only button styling for a cleaner appearance
+     */
+    private String getIconOnlyButtonStyle() {
+        return "-fx-background-color: #C0C0C0; " +
+               "-fx-border-color: #999999; " +
+               "-fx-border-width: 1px; " +
+               "-fx-border-radius: 6px; " +
+               "-fx-background-radius: 6px; " +
+               "-fx-padding: 8px; " +
+               "-fx-cursor: hand; " +
+               "-fx-min-width: 40px; " +
+               "-fx-min-height: 40px; " +
+               "-fx-max-width: 40px; " +
+               "-fx-max-height: 40px;";
     }
     
     public void refresh() {
