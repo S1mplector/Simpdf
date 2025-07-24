@@ -29,6 +29,8 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
@@ -40,6 +42,8 @@ import javafx.stage.Stage;
  */
 public class DocumentLibraryComponent extends VBox {
 
+    private static final Logger logger = LoggerFactory.getLogger(DocumentLibraryComponent.class);
+    
     private final PdfApplicationService documentService;
     private final ReadingProgressService progressService;
     private final PdfFolderScannerService folderScannerService;
@@ -135,9 +139,16 @@ public class DocumentLibraryComponent extends VBox {
         root = new VBox(10);
         root.setPadding(new Insets(20));
 
-        // Create header
+        // Create header with logo
+        HBox headerBox = new HBox(10);
+        headerBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        
+        // Add logo
+        ImageView logoView = createIcon("logo.png", 40, 40);
         Label titleLabel = new Label("Document Library");
         titleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        
+        headerBox.getChildren().addAll(logoView, titleLabel);
 
         // Create folder path display
         folderPathLabel = new Label("No PDF folder selected");
@@ -160,7 +171,7 @@ public class DocumentLibraryComponent extends VBox {
 
         // Layout
         HBox buttonBox = new HBox(10, selectFolderButton, deleteButton, refreshButton);
-        root.getChildren().addAll(titleLabel, folderPathLabel, buttonBox, searchComponent, documentsTable, statusLabel);
+        root.getChildren().addAll(headerBox, folderPathLabel, buttonBox, searchComponent, documentsTable, statusLabel);
         
         // Add the root VBox to this component
         this.getChildren().add(root);
@@ -170,17 +181,23 @@ public class DocumentLibraryComponent extends VBox {
     }
 
     private void createButtons() {
+        // Select folder button with icon
         selectFolderButton = new Button("Select PDF Folder");
-        selectFolderButton.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
+        selectFolderButton.setGraphic(createIcon("Select.png", 20, 20));
+        selectFolderButton.setStyle(getUniformButtonStyle());
         selectFolderButton.setOnAction(e -> selectPdfFolder());
 
+        // Delete button with icon
         deleteButton = new Button("Delete");
-        deleteButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white;");
+        deleteButton.setGraphic(createIcon("delete.png", 20, 20));
+        deleteButton.setStyle(getUniformButtonStyle());
         deleteButton.setOnAction(e -> deleteSelectedDocument());
         deleteButton.setDisable(true);
 
+        // Rescan button with icon
         refreshButton = new Button("Rescan Folder");
-        refreshButton.setStyle("-fx-background-color: #2196F3; -fx-text-fill: white;");
+        refreshButton.setGraphic(createIcon("rescan.png", 20, 20));
+        refreshButton.setStyle(getUniformButtonStyle());
         refreshButton.setOnAction(e -> rescanFolder());
         refreshButton.setDisable(true);
     }
@@ -373,6 +390,40 @@ public class DocumentLibraryComponent extends VBox {
     // Public API
     public void setDocumentSelectionListener(DocumentSelectionListener listener) {
         this.selectionListener = listener;
+    }
+
+    /**
+     * Helper method to create icons from the assets/icons directory
+     */
+    private ImageView createIcon(String iconName, int width, int height) {
+        try {
+            String iconPath = "/com/pdfreader/presentation/gui/components/assets/icons/" + iconName;
+            Image icon = new Image(getClass().getResourceAsStream(iconPath));
+            ImageView imageView = new ImageView(icon);
+            imageView.setFitWidth(width);
+            imageView.setFitHeight(height);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            return imageView;
+        } catch (Exception e) {
+            logger.warn("Could not load icon: " + iconName, e);
+            return new ImageView(); // Return empty ImageView if icon fails to load
+        }
+    }
+    
+    /**
+     * Get uniform button styling for consistent appearance
+     */
+    private String getUniformButtonStyle() {
+        return "-fx-background-color: #C0C0C0; " +
+               "-fx-text-fill: #333333; " +
+               "-fx-border-color: #999999; " +
+               "-fx-border-width: 1px; " +
+               "-fx-border-radius: 4px; " +
+               "-fx-background-radius: 4px; " +
+               "-fx-padding: 8px 12px; " +
+               "-fx-font-size: 12px; " +
+               "-fx-cursor: hand;";
     }
     
     public void refresh() {

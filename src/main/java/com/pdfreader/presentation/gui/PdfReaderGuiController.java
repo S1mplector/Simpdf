@@ -9,9 +9,12 @@ import com.pdfreader.application.DocumentSearchService;
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.presentation.gui.components.DocumentLibraryComponent;
 import com.pdfreader.presentation.gui.components.PdfViewerComponent;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -77,7 +80,9 @@ public class PdfReaderGuiController implements Initializable {
         documentLibrary = new DocumentLibraryComponent(pdfApplicationService, readingProgressService, pdfFolderScannerService, librarySearchService, documentSearchService);
         pdfViewer = new PdfViewerComponent(pdfPageRenderer, readingProgressService, documentSearchService, librarySearchService);
         
-        // Configure back button
+        // Configure back button with icon
+        backToLibraryButton.setGraphic(createIcon("back_library.png", 20, 20));
+        backToLibraryButton.setStyle(getUniformButtonStyle());
         backToLibraryButton.setVisible(false);
         backToLibraryButton.setManaged(false);
     }
@@ -147,9 +152,41 @@ public class PdfReaderGuiController implements Initializable {
      * Update the status label
      */
     private void updateStatus(String message) {
-        if (statusLabel != null) {
-            statusLabel.setText(message);
+        Platform.runLater(() -> statusLabel.setText(message));
+    }
+    
+    /**
+     * Helper method to create icons from the assets/icons directory
+     */
+    private ImageView createIcon(String iconName, int width, int height) {
+        try {
+            String iconPath = "/com/pdfreader/presentation/gui/components/assets/icons/" + iconName;
+            Image icon = new Image(getClass().getResourceAsStream(iconPath));
+            ImageView imageView = new ImageView(icon);
+            imageView.setFitWidth(width);
+            imageView.setFitHeight(height);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            return imageView;
+        } catch (Exception e) {
+            System.err.println("Could not load icon: " + iconName + ", " + e.getMessage());
+            return new ImageView(); // Return empty ImageView if icon fails to load
         }
+    }
+    
+    /**
+     * Get uniform button styling for consistent appearance
+     */
+    private String getUniformButtonStyle() {
+        return "-fx-background-color: #C0C0C0; " +
+               "-fx-text-fill: #333333; " +
+               "-fx-border-color: #999999; " +
+               "-fx-border-width: 1px; " +
+               "-fx-border-radius: 4px; " +
+               "-fx-background-radius: 4px; " +
+               "-fx-padding: 8px 12px; " +
+               "-fx-font-size: 12px; " +
+               "-fx-cursor: hand;";
     }
     
     /**

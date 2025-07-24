@@ -119,13 +119,16 @@ public class PdfViewerComponent extends BorderPane {
         
         // Navigation controls
         prevButton = new Button("◀ Previous");
+        prevButton.setStyle(getUniformButtonStyle());
         nextButton = new Button("Next ▶");
+        nextButton.setStyle(getUniformButtonStyle());
         pageField = new TextField();
         pageField.setPrefWidth(60);
         pageLabel = new Label("Page 0 of 0");
         
         // View mode toggle
         viewModeToggle = new ToggleButton("📄 Single Page");
+        viewModeToggle.setStyle(getUniformButtonStyle());
         viewModeToggle.setSelected(true);
         viewModeToggle.setPrefWidth(120);
         
@@ -629,6 +632,21 @@ public class PdfViewerComponent extends BorderPane {
     
     public PdfDocument getCurrentDocument() {
         return currentDocument;
+    }
+    
+    /**
+     * Get uniform button styling for consistent appearance
+     */
+    private String getUniformButtonStyle() {
+        return "-fx-background-color: #C0C0C0; " +
+               "-fx-text-fill: #333333; " +
+               "-fx-border-color: #999999; " +
+               "-fx-border-width: 1px; " +
+               "-fx-border-radius: 4px; " +
+               "-fx-background-radius: 4px; " +
+               "-fx-padding: 8px 12px; " +
+               "-fx-font-size: 12px; " +
+               "-fx-cursor: hand;";
     }
     
     public void cleanup() {

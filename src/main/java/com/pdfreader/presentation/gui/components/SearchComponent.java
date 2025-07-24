@@ -13,6 +13,8 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -108,11 +110,12 @@ public class SearchComponent extends VBox {
             "Search library..." : "Search in document...");
         searchField.setPrefWidth(300);
         
-        searchButton = new Button("🔍 Search");
-        searchButton.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
+        searchButton = new Button("Search");
+        searchButton.setGraphic(createIcon("search.png", 20, 20));
+        searchButton.setStyle(getUniformButtonStyle());
         
         clearButton = new Button("✕ Clear");
-        clearButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white;");
+        clearButton.setStyle(getUniformButtonStyle());
         clearButton.setDisable(true);
         
         progressIndicator = new ProgressIndicator();
@@ -358,9 +361,43 @@ public class SearchComponent extends VBox {
         this.currentDocument = document;
     }
     
-    public void setCurrentPage(String pageText, int pageNumber) {
+    public void setCurrentPageText(String pageText, int pageNumber) {
         this.currentPageText = pageText;
         this.currentPageNumber = pageNumber;
+    }
+    
+    /**
+     * Helper method to create icons from the assets/icons directory
+     */
+    private ImageView createIcon(String iconName, int width, int height) {
+        try {
+            String iconPath = "/com/pdfreader/presentation/gui/components/assets/icons/" + iconName;
+            Image icon = new Image(getClass().getResourceAsStream(iconPath));
+            ImageView imageView = new ImageView(icon);
+            imageView.setFitWidth(width);
+            imageView.setFitHeight(height);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            return imageView;
+        } catch (Exception e) {
+            System.err.println("Could not load icon: " + iconName + ", " + e.getMessage());
+            return new ImageView(); // Return empty ImageView if icon fails to load
+        }
+    }
+    
+    /**
+     * Get uniform button styling for consistent appearance
+     */
+    private String getUniformButtonStyle() {
+        return "-fx-background-color: #C0C0C0; " +
+               "-fx-text-fill: #333333; " +
+               "-fx-border-color: #999999; " +
+               "-fx-border-width: 1px; " +
+               "-fx-border-radius: 4px; " +
+               "-fx-background-radius: 4px; " +
+               "-fx-padding: 8px 12px; " +
+               "-fx-font-size: 12px; " +
+               "-fx-cursor: hand;";
     }
     
     public void setOnResultSelected(Consumer<SearchResult> callback) {
