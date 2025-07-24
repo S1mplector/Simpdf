@@ -1,0 +1,175 @@
+package com.pdfreader.presentation.gui;
+
+import com.pdfreader.application.PdfApplicationService;
+import com.pdfreader.application.PdfFolderScannerService;
+import com.pdfreader.application.PdfPageRenderer;
+import com.pdfreader.application.ReadingProgressService;
+import com.pdfreader.domain.model.PdfDocument;
+import com.pdfreader.presentation.gui.components.DocumentLibraryComponent;
+import com.pdfreader.presentation.gui.components.PdfViewerComponent;
+import javafx.fxml.FXML;
+import javafx.fxml.Initializable;
+import javafx.scene.control.*;
+import javafx.scene.layout.BorderPane;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.net.URL;
+import java.util.ResourceBundle;
+
+/**
+ * Main controller for the PDF Reader GUI application.
+ * Uses modular components for document library and PDF viewing.
+ * Follows MVC pattern with clear separation of concerns.
+ */
+@Component
+public class PdfReaderGuiController implements Initializable {
+
+    @Autowired
+    private PdfApplicationService pdfApplicationService;
+    
+    @Autowired
+    private PdfPageRenderer pdfPageRenderer;
+    
+    @Autowired
+    private ReadingProgressService readingProgressService;
+    
+    @Autowired
+    private PdfFolderScannerService pdfFolderScannerService;
+
+    @FXML
+    private BorderPane rootPane;
+    
+    @FXML
+    private SplitPane mainSplitPane;
+    
+    @FXML
+    private Label statusLabel;
+    
+    @FXML
+    private Button backToLibraryButton;
+
+    // Modular components
+    private DocumentLibraryComponent documentLibrary;
+    private PdfViewerComponent pdfViewer;
+    
+    // Current state
+    private boolean isViewingDocument = false;
+
+    @Override
+    public void initialize(URL location, ResourceBundle resources) {
+        initializeComponents();
+        setupLayout();
+        setupEventHandlers();
+        showDocumentLibrary();
+    }
+    
+    private void initializeComponents() {
+        // Initialize modular components
+        documentLibrary = new DocumentLibraryComponent(pdfApplicationService, readingProgressService, pdfFolderScannerService);
+        pdfViewer = new PdfViewerComponent(pdfPageRenderer, readingProgressService);
+        
+        // Configure back button
+        backToLibraryButton.setVisible(false);
+        backToLibraryButton.setManaged(false);
+    }
+    
+    private void setupLayout() {
+        // The main split pane will be managed programmatically
+        mainSplitPane.getItems().clear();
+    }
+    
+    private void setupEventHandlers() {
+        // Document selection handler
+        documentLibrary.setDocumentSelectionListener(this::openDocument);
+        
+        // Back to library button
+        backToLibraryButton.setOnAction(e -> showDocumentLibrary());
+        
+        // PDF viewer page change listener
+        pdfViewer.addPageChangeListener((page, total) -> {
+            updateStatus(String.format("Page %d of %d", page, total));
+        });
+    }
+    
+    /**
+     * Show the document library view
+     */
+    private void showDocumentLibrary() {
+        mainSplitPane.getItems().clear();
+        mainSplitPane.getItems().add(documentLibrary);
+        
+        backToLibraryButton.setVisible(false);
+        backToLibraryButton.setManaged(false);
+        
+        isViewingDocument = false;
+        updateStatus("Select a document to read");
+        
+        // Refresh the library when returning to it
+        documentLibrary.refresh();
+    }
+    
+    /**
+     * Open a document for reading
+     */
+    private void openDocument(PdfDocument document) {
+        try {
+            mainSplitPane.getItems().clear();
+            mainSplitPane.getItems().add(pdfViewer);
+            
+            // Load the document in the viewer
+            pdfViewer.loadDocument(document);
+            
+            backToLibraryButton.setVisible(true);
+            backToLibraryButton.setManaged(true);
+            
+            isViewingDocument = true;
+            updateStatus("Reading: " + document.getFileName());
+            
+            // Focus the viewer for keyboard navigation
+            pdfViewer.requestFocus();
+            
+        } catch (Exception e) {
+            updateStatus("Error opening document: " + e.getMessage());
+            showErrorAlert("Open Error", "Failed to open document", e.getMessage());
+        }
+    }
+    
+    /**
+     * Update the status label
+     */
+    private void updateStatus(String message) {
+        if (statusLabel != null) {
+            statusLabel.setText(message);
+        }
+    }
+    
+    /**
+     * Show error alert dialog
+     */
+    private void showErrorAlert(String title, String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+    
+    /**
+     * Cleanup resources when the controller is destroyed
+     */
+    public void cleanup() {
+        if (pdfViewer != null) {
+            pdfViewer.cleanup();
+        }
+    }
+    
+    // Public API for external access
+    public boolean isViewingDocument() {
+        return isViewingDocument;
+    }
+    
+    public PdfDocument getCurrentDocument() {
+        return isViewingDocument ? pdfViewer.getCurrentDocument() : null;
+    }
+}
