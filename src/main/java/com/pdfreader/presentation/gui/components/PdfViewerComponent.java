@@ -331,6 +331,12 @@ public class PdfViewerComponent extends BorderPane {
         // Setup single page mode
         setupSinglePageMode();
         
+        // Reset scroll position to top when switching to single page mode
+        Platform.runLater(() -> {
+            scrollPane.setVvalue(0.0);
+            scrollPane.setHvalue(0.0);
+        });
+        
         // If we have the current page image, set it immediately to avoid blank page
         if (currentPageImage != null) {
             pageImageView.setImage(currentPageImage);
@@ -628,6 +634,15 @@ public class PdfViewerComponent extends BorderPane {
     private void navigateToPage(int page) {
         if (page >= 1 && page <= totalPages && page != currentPage) {
             currentPage = page;
+            
+            // Reset scroll position to top when navigating to a new page in single page mode
+            if (currentViewMode == ViewMode.SINGLE_PAGE) {
+                Platform.runLater(() -> {
+                    scrollPane.setVvalue(0.0); // Reset vertical scroll to top
+                    scrollPane.setHvalue(0.0); // Reset horizontal scroll to left
+                });
+            }
+            
             updateNavigationControls();
             renderCurrentPage();
             saveCurrentProgress();
