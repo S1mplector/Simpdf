@@ -55,6 +55,9 @@ public class PdfReaderGuiController implements Initializable {
     
     @FXML
     private Button backToLibraryButton;
+    
+    @FXML
+    private ImageView mainLogoView;
 
     // Modular components
     private DocumentLibraryComponent documentLibrary;
@@ -86,6 +89,9 @@ public class PdfReaderGuiController implements Initializable {
         // Initialize modular components
         documentLibrary = new DocumentLibraryComponent(pdfApplicationService, readingProgressService, pdfFolderScannerService, librarySearchService, documentSearchService);
         pdfViewer = new PdfViewerComponent(pdfPageRenderer, readingProgressService, documentSearchService, librarySearchService, bookmarkService);
+        
+        // Configure main logo
+        mainLogoView.setImage(createIcon("logo.png", 24, 24).getImage());
         
         // Configure back button with icon
         backToLibraryButton.setGraphic(createIcon("back_library.png", 20, 20));

@@ -140,16 +140,14 @@ public class DocumentLibraryComponent extends VBox {
         root = new VBox(10);
         root.setPadding(new Insets(20));
 
-        // Create header with logo
+        // Create header
         HBox headerBox = new HBox(10);
         headerBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         
-        // Add logo
-        ImageView logoView = createIcon("logo.png", 40, 40);
         Label titleLabel = new Label("Document Library");
         titleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
         
-        headerBox.getChildren().addAll(logoView, titleLabel);
+        headerBox.getChildren().add(titleLabel);
 
         // Create folder path display
         folderPathLabel = new Label("No PDF folder selected");
