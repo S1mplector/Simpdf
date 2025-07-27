@@ -31,6 +31,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import com.pdfreader.presentation.gui.components.PdfViewerToolbar;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -76,6 +77,7 @@ public class PdfViewerComponent extends BorderPane {
     private boolean bookmarkPlacementMode = false;
     private ImageView cursorBookmarkIcon;
     private StackPane bookmarkOverlay;
+    private PdfViewerToolbar toolbar;
 
     // State
     private PdfDocument currentDocument;
@@ -138,20 +140,20 @@ public class PdfViewerComponent extends BorderPane {
         // Initialize with single page mode
         setupSinglePageMode();
 
-        // Navigation controls
-        prevButton = new Button("◀ Previous");
-        prevButton.setStyle(getUniformButtonStyle());
-        nextButton = new Button("Next ▶");
-        nextButton.setStyle(getUniformButtonStyle());
-        pageField = new TextField();
-        pageField.setPrefWidth(60);
-        pageLabel = new Label("Page 0 of 0");
+        // Navigation controls and toolbar now extracted
+        // Initialize toolbar component
+        toolbar = new PdfViewerToolbar();
 
-        // View mode toggle
-        viewModeToggle = new ToggleButton("📄 Single Page");
-        viewModeToggle.setStyle(getUniformButtonStyle());
-        viewModeToggle.setSelected(true);
-        viewModeToggle.setPrefWidth(120);
+        // Map toolbar controls to former fields for seamless integration
+        viewModeToggle = toolbar.getViewModeToggle();
+        prevButton     = toolbar.getPrevButton();
+        nextButton     = toolbar.getNextButton();
+        pageField      = toolbar.getPageField();
+        pageLabel      = toolbar.getPageLabel();
+        bookmarkButton = toolbar.getBookmarkButton();
+        progressBar    = toolbar.getProgressBar();
+        progressLabel  = toolbar.getProgressLabel();
+        zoomSlider     = toolbar.getZoomSlider();
 
         // Document search component
         documentSearchComponent = new SearchComponent(SearchComponent.SearchMode.DOCUMENT_SEARCH,
@@ -161,29 +163,6 @@ public class PdfViewerComponent extends BorderPane {
         // Initialize bookmark overlay
         bookmarkOverlay = new StackPane();
         bookmarkOverlay.setMouseTransparent(true); // Allow clicks to pass through to content below
-        bookmarkOverlay.setPickOnBounds(false);
-
-        // Progress controls
-        progressBar = new ProgressBar(0);
-        progressBar.setPrefWidth(200);
-        progressLabel = new Label("0%");
-
-        // Zoom controls
-        zoomSlider = new Slider(0.5, 3.0, 1.0);
-        zoomSlider.setShowTickLabels(true);
-        zoomSlider.setShowTickMarks(true);
-        zoomSlider.setMajorTickUnit(0.5);
-        zoomSlider.setPrefWidth(150);
-
-        // Bookmark button
-        bookmarkButton = new ToggleButton("🔖");
-        bookmarkButton.setStyle(getUniformButtonStyle());
-        bookmarkButton.setTooltip(new Tooltip("Add Bookmark"));
-        bookmarkButton.setOnAction(e -> toggleBookmarkMode());
-
-        // Initialize bookmark overlay
-        bookmarkOverlay = new StackPane();
-        bookmarkOverlay.setMouseTransparent(false);
         bookmarkOverlay.setPickOnBounds(false);
     }
 
@@ -202,24 +181,6 @@ public class PdfViewerComponent extends BorderPane {
     }
 
     private void setupLayout() {
-        // Top toolbar
-        HBox toolbar = new HBox(10);
-        toolbar.setAlignment(Pos.CENTER_LEFT);
-        toolbar.getChildren().addAll(
-                viewModeToggle,
-                new Separator(),
-                prevButton, nextButton,
-                new Separator(),
-                new Label("Page:"), pageField, pageLabel,
-                new Separator(),
-                bookmarkButton,
-                new Separator(),
-                new Label("Progress:"), progressBar, progressLabel,
-                new Separator(),
-                new Label("Zoom:"), zoomSlider
-        );
-        toolbar.setStyle("-fx-padding: 10; -fx-background-color: #f0f0f0;");
-
         // Center content with bookmark overlay
         VBox centerContent = new VBox();
 
@@ -230,7 +191,7 @@ public class PdfViewerComponent extends BorderPane {
         centerContent.getChildren().add(contentWithBookmarks);
         VBox.setVgrow(contentWithBookmarks, Priority.ALWAYS);
 
-        setTop(toolbar);
+        setTop(this.toolbar);
         setCenter(centerContent);
     }
 
