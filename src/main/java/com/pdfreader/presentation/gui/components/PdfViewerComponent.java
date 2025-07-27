@@ -32,6 +32,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import com.pdfreader.presentation.gui.components.PdfViewerToolbar;
+import com.pdfreader.presentation.gui.components.BookmarkOverlay;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -76,7 +77,7 @@ public class PdfViewerComponent extends BorderPane {
     private ToggleButton bookmarkButton;
     private boolean bookmarkPlacementMode = false;
     private ImageView cursorBookmarkIcon;
-    private StackPane bookmarkOverlay;
+    private BookmarkOverlay bookmarkOverlay;
     private PdfViewerToolbar toolbar;
 
     // State
@@ -160,10 +161,8 @@ public class PdfViewerComponent extends BorderPane {
                 librarySearchService, documentSearchService);
         documentSearchComponent.setOnResultSelected(this::handleSearchResultSelected);
 
-        // Initialize bookmark overlay
-        bookmarkOverlay = new StackPane();
-        bookmarkOverlay.setMouseTransparent(true); // Allow clicks to pass through to content below
-        bookmarkOverlay.setPickOnBounds(false);
+        // Initialize bookmark overlay component
+        bookmarkOverlay = new BookmarkOverlay();
     }
 
     private void setupSinglePageMode() {
