@@ -1,9 +1,13 @@
+com\pdfreader\domain\model\Bookmark$Builder.class
 com\pdfreader\presentation\gui\components\DocumentLibraryComponent$DocumentWithProgress.class
+com\pdfreader\domain\model\Bookmark.class
 com\pdfreader\infrastructure\repository\InMemoryReadingProgressRepository.class
 com\pdfreader\presentation\gui\components\SearchComponent.class
 com\pdfreader\presentation\cli\PdfReaderCli.class
 com\pdfreader\presentation\gui\components\PdfViewerComponent.class
+com\pdfreader\application\BookmarkService.class
 com\pdfreader\presentation\gui\components\SearchComponent$SearchMode.class
+com\pdfreader\presentation\gui\components\PdfViewerToolbar.class
 com\pdfreader\presentation\gui\components\PdfViewerComponent$2.class
 com\pdfreader\presentation\gui\PdfReaderGuiController.class
 com\pdfreader\application\ReadingProgressService.class

@@ -118,6 +118,7 @@ public class FilePdfDocumentRepository implements PdfDocumentRepository {
     /**
      * Find document by file path (utility method, not part of interface)
      */
+    @Override
     public Optional<PdfDocument> findByFilePath(String filePath) {
         return documentCache.values().stream()
                 .filter(doc -> filePath.equals(doc.getFilePath()))

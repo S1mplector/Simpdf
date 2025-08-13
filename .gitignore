@@ -36,6 +36,13 @@ Thumbs.db
 logs/
 *.log
 
+# File types
+# Ignore listing files
+*.lst
+# Ignore all properties files by default, but keep those under resources
+*.properties
+!src/main/resources/**/*.properties
+
 # Application specific
 application.properties
 application-*.properties

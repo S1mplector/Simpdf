@@ -40,4 +40,12 @@ public class InMemoryPdfDocumentRepository implements PdfDocumentRepository {
     public boolean existsById(String id) {
         return documents.containsKey(id);
     }
+
+    @Override
+    public Optional<PdfDocument> findByFilePath(String filePath) {
+        if (filePath == null) return Optional.empty();
+        return documents.values().stream()
+                .filter(d -> filePath.equals(d.getFilePath()))
+                .findFirst();
+    }
 }

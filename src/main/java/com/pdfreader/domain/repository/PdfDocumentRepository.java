@@ -11,4 +11,9 @@ public interface PdfDocumentRepository {
     PdfDocument save(PdfDocument document);
     void deleteById(String id);
     boolean existsById(String id);
+    
+    /**
+     * Find a document by its absolute file path, if the implementation supports it.
+     */
+    Optional<PdfDocument> findByFilePath(String filePath);
 }

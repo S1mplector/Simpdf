@@ -7,18 +7,21 @@ import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class PdfFolderScannerService {
@@ -26,10 +29,23 @@ public class PdfFolderScannerService {
     
     private final PdfDocumentRepository documentRepository;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private ExecutorService scanExecutor;
     
     private Path watchedFolder;
     private WatchService watchService;
     private boolean isScanning = false;
+    
+    @Value("${pdf.allowed-extensions:.pdf}")
+    private String allowedExtensionsProp;
+    
+    @Value("${pdf.max-file-size:10MB}")
+    private String maxFileSizeProp;
+    
+    @Value("${pdf.scan.max-threads:4}")
+    private int maxScanThreads;
+    
+    @Value("${pdf.scan.ignore-hidden:true}")
+    private boolean ignoreHidden;
     
     @Autowired
     public PdfFolderScannerService(PdfDocumentRepository documentRepository) {
@@ -47,6 +63,11 @@ public class PdfFolderScannerService {
                 this.watchedFolder = Paths.get(folderPath);
                 if (!Files.exists(watchedFolder) || !Files.isDirectory(watchedFolder)) {
                     throw new IllegalArgumentException("Invalid folder path: " + folderPath);
+                }
+                
+                // Initialize executor respecting configuration
+                if (scanExecutor == null || scanExecutor.isShutdown()) {
+                    scanExecutor = Executors.newFixedThreadPool(Math.max(1, maxScanThreads));
                 }
                 
                 // Initial scan
@@ -72,11 +93,24 @@ public class PdfFolderScannerService {
         try {
             logger.info("Scanning folder for PDFs: {}", watchedFolder);
             
-            Files.walk(watchedFolder)
+            long maxSizeBytes = parseSizeToBytes(maxFileSizeProp);
+            var allowedExts = parseExtensions(allowedExtensionsProp);
+            
+            List<Path> files = Files.walk(watchedFolder)
+                    .filter(p -> !ignoreHidden || !isHiddenPath(p))
                     .filter(Files::isRegularFile)
-                    .filter(path -> path.toString().toLowerCase().endsWith(".pdf"))
-                    .forEach(this::processPdfFile);
-                    
+                    .filter(path -> hasAllowedExtension(path, allowedExts))
+                    .filter(path -> sizeWithinLimit(path, maxSizeBytes))
+                    .collect(Collectors.toList());
+
+            // Process concurrently with bounded pool
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (Path p : files) {
+                futures.add(CompletableFuture.runAsync(() -> processPdfFile(p), scanExecutor));
+            }
+            // Wait for completion
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                     
         } catch (IOException e) {
             logger.error("Error scanning folder for PDFs", e);
         }
@@ -106,7 +140,7 @@ public class PdfFolderScannerService {
                                 Path changed = (Path) event.context();
                                 Path fullPath = watchedFolder.resolve(changed);
                                 
-                                if (changed.toString().toLowerCase().endsWith(".pdf")) {
+                                if (hasAllowedExtension(fullPath, parseExtensions(allowedExtensionsProp))) {
                                     // Delay processing to ensure file is fully written
                                     scheduler.schedule(() -> processPdfFile(fullPath), 2, TimeUnit.SECONDS);
                                 }
@@ -137,62 +171,111 @@ public class PdfFolderScannerService {
             }
             
             String fileName = pdfPath.getFileName().toString();
-            String fileId = generateFileId(pdfPath);
+            String fileId = generateStableFileId(pdfPath);
             
-            // Check if already exists
-            if (documentRepository.existsById(fileId)) {
-                logger.debug("PDF already exists in repository: {}", fileName);
+            long fileSize = Files.size(pdfPath);
+            
+            // Dedup/update by file path
+            var existingByPath = documentRepository.findByFilePath(pdfPath.toString());
+            if (existingByPath.isPresent()) {
+                PdfDocument existing = existingByPath.get();
+                // If size changed or we detect modification newer than our record, refresh metadata
+                if (existing.getFileSize() != fileSize) {
+                    logger.debug("Updating existing PDF metadata (size changed): {}", fileName);
+                    refreshAndSavePdf(existing.getId(), pdfPath, fileName);
+                } else {
+                    logger.trace("No changes detected for: {}", fileName);
+                }
                 return;
             }
             
             // Extract PDF metadata
-            try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
-                PDDocumentInformation info = document.getDocumentInformation();
-                
-                String title = info.getTitle();
-                if (title == null || title.trim().isEmpty()) {
-                    title = fileName.replaceAll("\\.pdf$", "");
-                }
-                
-                String author = info.getAuthor();
-                if (author == null) author = "Unknown";
-                
-                int pageCount = document.getNumberOfPages();
-                
-                long fileSize = Files.size(pdfPath);
-                
-                PdfDocument pdfDocument = new PdfDocument(
-                    fileId,
-                    fileName,
-                    pdfPath.toString(),
-                    fileSize,
-                    pageCount,
-                    title,
-                    author,
-                    info.getSubject(),
-                    info.getKeywords(),
-                    LocalDateTime.now(),
-                    LocalDateTime.now()
-                );
-                
-                documentRepository.save(pdfDocument);
-                logger.info("Added new PDF to library: {} ({} pages)", fileName, pageCount);
-                
-            }
+            saveNewPdf(fileId, pdfPath, fileName);
         } catch (Exception e) {
             logger.error("Failed to process PDF file: {}", pdfPath, e);
+        }
+    }
+    
+    private void saveNewPdf(String fileId, Path pdfPath, String fileName) throws IOException {
+        try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
+            PDDocumentInformation info = document.getDocumentInformation();
+
+            String title = info.getTitle();
+            if (title == null || title.trim().isEmpty()) {
+                title = fileName.replaceAll("\\.pdf$", "");
+            }
+
+            String author = info.getAuthor();
+            if (author == null) author = "Unknown";
+
+            int pageCount = document.getNumberOfPages();
+
+            long fileSize = Files.size(pdfPath);
+
+            PdfDocument pdfDocument = new PdfDocument(
+                fileId,
+                fileName,
+                pdfPath.toString(),
+                fileSize,
+                pageCount,
+                title,
+                author,
+                info.getSubject(),
+                info.getKeywords(),
+                LocalDateTime.now(),
+                LocalDateTime.now()
+            );
+
+            documentRepository.save(pdfDocument);
+            logger.info("Added new PDF to library: {} ({} pages)", fileName, pageCount);
+        }
+    }
+
+    private void refreshAndSavePdf(String id, Path pdfPath, String fileName) throws IOException {
+        try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
+            PDDocumentInformation info = document.getDocumentInformation();
+
+            String title = info.getTitle();
+            if (title == null || title.trim().isEmpty()) {
+                title = fileName.replaceAll("\\.pdf$", "");
+            }
+
+            String author = info.getAuthor();
+            if (author == null) author = "Unknown";
+
+            int pageCount = document.getNumberOfPages();
+
+            long fileSize = Files.size(pdfPath);
+
+            PdfDocument pdfDocument = new PdfDocument(
+                id,
+                fileName,
+                pdfPath.toString(),
+                fileSize,
+                pageCount,
+                title,
+                author,
+                info.getSubject(),
+                info.getKeywords(),
+                LocalDateTime.now(),
+                LocalDateTime.now()
+            );
+
+            documentRepository.save(pdfDocument);
+            logger.info("Updated PDF in library: {} ({} pages)", fileName, pageCount);
         }
     }
     
     /**
      * Generate a unique ID for a PDF file based on its path and last modified time
      */
-    private String generateFileId(Path pdfPath) {
+    private String generateStableFileId(Path pdfPath) {
+        // Stable ID based on normalized absolute path
         try {
-            long lastModified = Files.getLastModifiedTime(pdfPath).toMillis();
-            return pdfPath.toString().hashCode() + "_" + lastModified;
-        } catch (IOException e) {
-            return pdfPath.toString().hashCode() + "_" + System.currentTimeMillis();
+            Path abs = pdfPath.toAbsolutePath().normalize();
+            return Integer.toHexString(abs.toString().hashCode());
+        } catch (Exception e) {
+            return Integer.toHexString(pdfPath.toString().hashCode());
         }
     }
     
@@ -207,7 +290,7 @@ public class PdfFolderScannerService {
      * Manually trigger a rescan of the folder
      */
     public CompletableFuture<Void> rescanFolder() {
-        return CompletableFuture.runAsync(this::scanFolderForPdfs);
+        return CompletableFuture.runAsync(this::scanFolderForPdfs, scanExecutor != null ? scanExecutor : Executors.newSingleThreadExecutor());
     }
     
     /**
@@ -223,8 +306,10 @@ public class PdfFolderScannerService {
                 logger.error("Error closing watch service", e);
             }
         }
-        
-        scheduler.shutdown();
+        // Do not shutdown scheduler to allow reuse; shutdown scan executor if present
+        if (scanExecutor != null && !scanExecutor.isShutdown()) {
+            scanExecutor.shutdown();
+        }
     }
     
     /**
@@ -239,5 +324,49 @@ public class PdfFolderScannerService {
      */
     public boolean isScanning() {
         return isScanning && watchedFolder != null;
+    }
+
+    // Helpers
+    private boolean hasAllowedExtension(Path path, Collection<String> allowed) {
+        String name = path.getFileName().toString().toLowerCase();
+        for (String ext : allowed) {
+            if (name.endsWith(ext)) return true;
+        }
+        return false;
+    }
+
+    private boolean sizeWithinLimit(Path path, long maxBytes) {
+        if (maxBytes <= 0) return true;
+        try { return Files.size(path) <= maxBytes; } catch (IOException e) { return false; }
+    }
+
+    private boolean isHiddenPath(Path p) {
+        try { return Files.isHidden(p) || p.getFileName().toString().startsWith("."); } catch (IOException e) { return false; }
+    }
+
+    private List<String> parseExtensions(String prop) {
+        if (prop == null || prop.isBlank()) return List.of(".pdf");
+        return List.of(prop.split(","))
+                .stream()
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(String::toLowerCase)
+                .map(s -> s.startsWith(".") ? s : "." + s)
+                .collect(Collectors.toList());
+    }
+
+    private long parseSizeToBytes(String prop) {
+        if (prop == null || prop.isBlank()) return 0L;
+        String s = prop.trim().toUpperCase();
+        try {
+            if (s.endsWith("KB")) return (long)(Double.parseDouble(s.replace("KB","")) * 1024);
+            if (s.endsWith("MB")) return (long)(Double.parseDouble(s.replace("MB","")) * 1024 * 1024);
+            if (s.endsWith("GB")) return (long)(Double.parseDouble(s.replace("GB","")) * 1024 * 1024 * 1024);
+            if (s.endsWith("B")) return (long)Double.parseDouble(s.replace("B",""));
+            return Long.parseLong(s);
+        } catch (NumberFormatException ex) {
+            logger.warn("Invalid size format '{}', ignoring limit", prop);
+            return 0L;
+        }
     }
 }
