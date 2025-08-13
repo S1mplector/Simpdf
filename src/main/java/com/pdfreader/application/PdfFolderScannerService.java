@@ -2,6 +2,7 @@ package com.pdfreader.application;
 
 import com.pdfreader.domain.model.PdfDocument;
 import com.pdfreader.domain.repository.PdfDocumentRepository;
+import com.pdfreader.infrastructure.persistence.ScanStateStore;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.slf4j.Logger;
@@ -47,6 +48,17 @@ public class PdfFolderScannerService {
     @Value("${pdf.scan.ignore-hidden:true}")
     private boolean ignoreHidden;
     
+    // Scan state persistence
+    @Value("${pdf.scan.state.enabled:true}")
+    private boolean scanStateEnabled;
+    @Value("${pdf.scan.state.file:scan-state.json}")
+    private String scanStateFileName;
+    // Data dir used for state storage (default aligns with repository dir)
+    @Value("${pdf.data-dir:${user.home}/.pdfreader}")
+    private String dataDir;
+    
+    private ScanStateStore scanStateStore;
+    
     @Autowired
     public PdfFolderScannerService(PdfDocumentRepository documentRepository) {
         this.documentRepository = documentRepository;
@@ -68,6 +80,16 @@ public class PdfFolderScannerService {
                 // Initialize executor respecting configuration
                 if (scanExecutor == null || scanExecutor.isShutdown()) {
                     scanExecutor = Executors.newFixedThreadPool(Math.max(1, maxScanThreads));
+                }
+                
+                // Initialize scan state if enabled
+                if (scanStateEnabled) {
+                    try {
+                        scanStateStore = new ScanStateStore(dataDir, scanStateFileName);
+                    } catch (Exception e) {
+                        logger.warn("Failed to initialize scan state store, continuing without state: {}", e.getMessage());
+                        scanStateEnabled = false;
+                    }
                 }
                 
                 // Initial scan
@@ -101,6 +123,7 @@ public class PdfFolderScannerService {
                     .filter(Files::isRegularFile)
                     .filter(path -> hasAllowedExtension(path, allowedExts))
                     .filter(path -> sizeWithinLimit(path, maxSizeBytes))
+                    .filter(path -> shouldProcess(path))
                     .collect(Collectors.toList());
 
             // Process concurrently with bounded pool
@@ -110,6 +133,10 @@ public class PdfFolderScannerService {
             }
             // Wait for completion
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            // Persist scan state after the batch
+            if (scanStateEnabled && scanStateStore != null) {
+                scanStateStore.persist();
+            }
                      
         } catch (IOException e) {
             logger.error("Error scanning folder for PDFs", e);
@@ -183,6 +210,7 @@ public class PdfFolderScannerService {
                 if (existing.getFileSize() != fileSize) {
                     logger.debug("Updating existing PDF metadata (size changed): {}", fileName);
                     refreshAndSavePdf(existing.getId(), pdfPath, fileName);
+                    updateScanState(pdfPath);
                 } else {
                     logger.trace("No changes detected for: {}", fileName);
                 }
@@ -191,6 +219,7 @@ public class PdfFolderScannerService {
             
             // Extract PDF metadata
             saveNewPdf(fileId, pdfPath, fileName);
+            updateScanState(pdfPath);
         } catch (Exception e) {
             logger.error("Failed to process PDF file: {}", pdfPath, e);
         }
@@ -310,6 +339,9 @@ public class PdfFolderScannerService {
         if (scanExecutor != null && !scanExecutor.isShutdown()) {
             scanExecutor.shutdown();
         }
+        if (scanStateEnabled && scanStateStore != null) {
+            try { scanStateStore.persist(); } catch (Exception ignore) {}
+        }
     }
     
     /**
@@ -367,6 +399,29 @@ public class PdfFolderScannerService {
         } catch (NumberFormatException ex) {
             logger.warn("Invalid size format '{}', ignoring limit", prop);
             return 0L;
+        }
+    }
+    
+    private boolean shouldProcess(Path path) {
+        if (!scanStateEnabled || scanStateStore == null) return true;
+        try {
+            long size = Files.size(path);
+            long mtime = Files.getLastModifiedTime(path).toMillis();
+            ScanStateStore.FileState prev = scanStateStore.get(path.toString());
+            if (prev == null) return true;
+            return prev.getSize() != size || prev.getMtime() != mtime;
+        } catch (IOException e) {
+            return true;
+        }
+    }
+    
+    private void updateScanState(Path path) {
+        if (!scanStateEnabled || scanStateStore == null) return;
+        try {
+            long size = Files.size(path);
+            long mtime = Files.getLastModifiedTime(path).toMillis();
+            scanStateStore.put(path.toString(), new ScanStateStore.FileState(size, mtime));
+        } catch (IOException ignored) {
         }
     }
 }
