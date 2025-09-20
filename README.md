@@ -1,6 +1,6 @@
-# SimPDF
+# Quill 
 
-A JavaFX-based PDF reader built with Spring Boot and Apache PDFBox. It supports single-page and infinite-scroll modes, zooming, reading progress, search, and bookmarks.
+A lightweight JavaFX-based PDF reader built with Spring Boot and Apache PDFBox. It supports single-page and infinite-scroll modes, zooming, reading progress, search, and bookmarks.
 
 ## Features
 
